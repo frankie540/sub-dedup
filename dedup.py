@@ -6,7 +6,8 @@ V2Ray Base64订阅聚合、解码、指纹去重、重编码脚本
 去重逻辑：忽略节点名称ps，依靠连接核心参数生成指纹
 相同指纹判定为重复节点，只保留第一条
 输出标准V2Ray base64订阅，适配OpenClash
-额外：生成运行摘要，Python内部更新README标记区块，规避shell转义问题
+额外：生成运行摘要，Python内部更新README标记区块
+修复：url含特殊Unicode字符打印报ascii编码错误，使用repr安全输出日志
 """
 import base64
 import re
@@ -220,7 +221,7 @@ def get_fingerprint(link: str) -> str:
 def update_readme_summary(summary_text: str):
     """Python内部替换README标记区块，避免shell/perl转义异常；文件缺失打印警告不终止程序"""
     try:
-        with open(README_FILE, "r", encoding="utf‑8") as f:
+        with open(README_FILE, "r", encoding="utf-8") as f:
             readme_content = f.read()
         pattern = re.compile(
             re.escape(MARKER_START) + r"\n.*?" + re.escape(MARKER_END),
@@ -228,7 +229,7 @@ def update_readme_summary(summary_text: str):
         )
         new_block = f"{MARKER_START}\n{summary_text}\n{MARKER_END}"
         new_content = pattern.sub(new_block, readme_content)
-        with open(README_FILE, "w", encoding="utf‑8") as f:
+        with open(README_FILE, "w", encoding="utf-8") as f:
             f.write(new_content)
         print("[OK] README.md 摘要区块已更新")
     except FileNotFoundError:
@@ -238,7 +239,7 @@ def update_readme_summary(summary_text: str):
 def main():
     fail_url_list = []
     # 读取源订阅列表
-    with open(SOURCE_FILE, "r", encoding="utf‑8") as f:
+    with open(SOURCE_FILE, "r", encoding="utf-8") as f:
         lines = [l.strip() for l in f if l.strip()]
     sub_urls = []
     for l in lines:
@@ -248,7 +249,7 @@ def main():
     print(f"[INFO] 读取到 {len(sub_urls)} 个订阅源")
 
     all_links: list[str] = []
-    headers = {"User‑Agent": USER_AGENT}
+    headers = {"User-Agent": USER_AGENT}
     for url in sub_urls:
         try:
             r = requests.get(url, headers=headers, timeout=REQ_TIMEOUT)
@@ -256,14 +257,16 @@ def main():
             sub_raw = r.text
             dec_text = safe_b64_decode(sub_raw)
             if not dec_text:
-                print(f"[WARN] {url} base64解码失败，跳过")
+                # 使用repr处理特殊字符url，防止ascii编码报错
+                print(f"[WARN] {repr(url)} base64解码失败，跳过")
                 fail_url_list.append(url)
                 continue
             links = [x.strip() for x in dec_text.splitlines() if x.strip()]
             all_links.extend(links)
-            print(f"[OK] {url} 解析得到 {len(links)} 条节点")
+            print(f"[OK] {repr(url)} 解析得到 {len(links)} 条节点")
         except Exception as e:
-            print(f"[ERR] 获取订阅 {url} 失败: {str(e)}")
+            # 使用repr处理特殊字符url，防止ascii编码报错
+            print(f"[ERR] 获取订阅 {repr(url)} 失败: {str(e)}")
             fail_url_list.append(url)
             continue
     print(f"[INFO] 原始汇总节点总数: {len(all_links)}")
@@ -285,26 +288,26 @@ def main():
     # 输出V2Ray base64订阅
     final_text = "\n".join(unique_links)
     final_b64 = safe_b64_encode(final_text)
-    with open(OUTPUT_FILE, "w", encoding="utf‑8") as f:
+    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         f.write(final_b64)
     print(f"[OK] 输出写入 {OUTPUT_FILE} 完成！")
 
     # 生成运行摘要
-    now_utc = datetime.utcnow().strftime("%Y‑%m‑%d %H:%M:%S UTC")
+    now_utc = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
     summary_lines = [
-        f"‑ 最后更新时间：{now_utc}",
-        f"‑ 订阅源总数：{len(sub_urls)}",
-        f"‑ 失败订阅源：{len(fail_url_list)}",
-        f"‑ 原始汇总节点：{len(all_links)}",
-        f"‑ 去重后节点：{len(unique_links)}"
+        f"- 最后更新时间：{now_utc}",
+        f"- 订阅源总数：{len(sub_urls)}",
+        f"- 失败订阅源：{len(fail_url_list)}",
+        f"- 原始汇总节点：{len(all_links)}",
+        f"- 去重后节点：{len(unique_links)}"
     ]
     if fail_url_list:
-        summary_lines.append("‑ 失效源列表：")
+        summary_lines.append("- 失效源列表：")
         for fu in fail_url_list:
-            summary_lines.append(f"  ‑ {fu}")
+            summary_lines.append(f"  - {fu}")
     summary_text = "\n".join(summary_lines)
 
-    with open(SUMMARY_FILE, "w", encoding="utf‑8") as f:
+    with open(SUMMARY_FILE, "w", encoding="utf-8") as f:
         f.write(summary_text)
     print(f"[OK] 输出写入 {SUMMARY_FILE} 完成！")
 
