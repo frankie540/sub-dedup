@@ -6,8 +6,9 @@ V2Ray Base64订阅聚合、解码、指纹去重、重编码脚本
 去重逻辑：忽略节点名称ps，依靠连接核心参数生成指纹
 相同指纹判定为重复节点，只保留第一条
 输出标准V2Ray base64订阅，适配OpenClash
+修复1：url含特殊Unicode字符打印报ascii编码错误，使用repr安全输出日志
+修复2：所有协议解析函数增加异常捕获，畸形/损坏节点不崩溃整体任务，仅跳过单条坏链接
 额外：生成运行摘要，Python内部更新README标记区块
-修复：url含特殊Unicode字符打印报ascii编码错误，使用repr安全输出日志
 """
 import base64
 import re
@@ -52,10 +53,10 @@ def safe_b64_encode(text: str) -> str:
 
 
 def parse_vmess(link: str) -> Tuple[str, Dict]:
-    """解析 vmess:// 链接，返回去重指纹"""
-    raw = link.removeprefix("vmess://")
-    dec = safe_b64_decode(raw)
+    """解析 vmess:// 链接，返回去重指纹，异常返回空"""
     try:
+        raw = link.removeprefix("vmess://")
+        dec = safe_b64_decode(raw)
         import json
         d = json.loads(dec)
         fp = (
@@ -69,122 +70,143 @@ def parse_vmess(link: str) -> Tuple[str, Dict]:
 
 
 def parse_vless(link: str) -> Tuple[str, Dict]:
-    """解析 vless:// 链接，返回去重指纹"""
-    main = link.removeprefix("vless://")
-    part_hash = main.split("#", 1)
-    main_nohash = part_hash[0]
+    """解析 vless:// 链接，返回去重指纹，异常返回空"""
     try:
-        userhost, qs_raw = main_nohash.split("?", 1)
-    except ValueError:
-        userhost = main_nohash
-        qs_raw = ""
-    uuid, hostport = userhost.split("@", 1)
-    host, port = hostport.split(":", 1)
-    qs = urllib.parse.parse_qs(qs_raw)
-    get = lambda k: qs.get(k, [""])[0]
-    fp = (
-        f"vless|{host}|{port}|{uuid}|{get('net')}|{get('host')}|{get('path')}|"
-        f"{get('tls')}|{get('security')}|{get('alpn')}|{get('fp')}"
-    )
-    return fp, {}
+        main = link.removeprefix("vless://")
+        part_hash = main.split("#", 1)
+        main_nohash = part_hash[0]
+        try:
+            userhost, qs_raw = main_nohash.split("?", 1)
+        except ValueError:
+            userhost = main_nohash
+            qs_raw = ""
+        uuid, hostport = userhost.split("@", 1)
+        host, port = hostport.split(":", 1)
+        qs = urllib.parse.parse_qs(qs_raw)
+        get = lambda k: qs.get(k, [""])[0]
+        fp = (
+            f"vless|{host}|{port}|{uuid}|{get('net')}|{get('host')}|{get('path')}|"
+            f"{get('tls')}|{get('security')}|{get('alpn')}|{get('fp')}"
+        )
+        return fp, {}
+    except Exception:
+        return "", {}
 
 
 def parse_trojan(link: str) -> Tuple[str, Dict]:
-    """解析 trojan:// 链接，返回去重指纹"""
-    main = link.removeprefix("trojan://")
-    main_nohash = main.split("#", 1)[0]
+    """解析 trojan:// 链接，返回去重指纹，异常返回空"""
     try:
-        passhost, qs_raw = main_nohash.split("?", 1)
-    except ValueError:
-        passhost = main_nohash
-        qs_raw = ""
-    password, hostport = passhost.split("@", 1)
-    host, port = hostport.split(":", 1)
-    qs = urllib.parse.parse_qs(qs_raw)
-    get = lambda k: qs.get(k, [""])[0]
-    fp = f"trojan|{host}|{port}|{password}|{get('tls')}|{get('alpn')}|{get('fp')}"
-    return fp, {}
+        main = link.removeprefix("trojan://")
+        main_nohash = main.split("#", 1)[0]
+        try:
+            passhost, qs_raw = main_nohash.split("?", 1)
+        except ValueError:
+            passhost = main_nohash
+            qs_raw = ""
+        password, hostport = passhost.split("@", 1)
+        host, port = hostport.split(":", 1)
+        qs = urllib.parse.parse_qs(qs_raw)
+        get = lambda k: qs.get(k, [""])[0]
+        fp = f"trojan|{host}|{port}|{password}|{get('tls')}|{get('alpn')}|{get('fp')}"
+        return fp, {}
+    except Exception:
+        return "", {}
 
 
 def parse_ss(link: str) -> Tuple[str, Dict]:
-    """解析 ss:// 链接，返回去重指纹"""
-    main = link.removeprefix("ss://")
-    main_nohash = main.split("#", 1)[0]
+    """解析 ss:// 链接，返回去重指纹，畸形链接捕获异常返回空"""
     try:
-        b64part, hostport = main_nohash.split("@", 1)
-    except ValueError:
+        main = link.removeprefix("ss://")
+        main_nohash = main.split("#", 1)[0]
+        try:
+            b64part, hostport = main_nohash.split("@", 1)
+        except ValueError:
+            return "", {}
+        dec = safe_b64_decode(b64part)
+        method, pwd = dec.split(":", 1)
+        host, port = hostport.split(":", 1)
+        fp = f"ss|{host}|{port}|{pwd}|{method}"
+        return fp, {}
+    except Exception:
         return "", {}
-    dec = safe_b64_decode(b64part)
-    method, pwd = dec.split(":", 1)
-    host, port = hostport.split(":", 1)
-    fp = f"ss|{host}|{port}|{pwd}|{method}"
-    return fp, {}
 
 
 def parse_ssr(link: str) -> Tuple[str, Dict]:
-    """解析 ssr:// 链接，返回去重指纹"""
-    raw = link.removeprefix("ssr://")
-    dec = safe_b64_decode(raw)
-    parts = dec.split(":")
-    if len(parts) < 6:
+    """解析 ssr:// 链接，返回去重指纹，异常返回空"""
+    try:
+        raw = link.removeprefix("ssr://")
+        dec = safe_b64_decode(raw)
+        parts = dec.split(":")
+        if len(parts) < 6:
+            return "", {}
+        host, port, protocol, method, obfs, rest = parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]
+        qs_raw = rest.split("/?", 1)[1] if "/?" in rest else ""
+        qs = urllib.parse.parse_qs(qs_raw)
+        get = lambda k: qs.get(k, [""])[0]
+        fp = f"ssr|{host}|{port}|{get('pass')}|{method}|{obfs}|{get('obfsparam')}|{protocol}|{get('protoparam')}"
+        return fp, {}
+    except Exception:
         return "", {}
-    host, port, protocol, method, obfs, rest = parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]
-    qs_raw = rest.split("/?", 1)[1] if "/?" in rest else ""
-    qs = urllib.parse.parse_qs(qs_raw)
-    get = lambda k: qs.get(k, [""])[0]
-    fp = f"ssr|{host}|{port}|{get('pass')}|{method}|{obfs}|{get('obfsparam')}|{protocol}|{get('protoparam')}"
-    return fp, {}
 
 
 def parse_hysteria2(link: str) -> Tuple[str, Dict]:
-    """解析 hysteria2:// 链接，返回去重指纹"""
-    main = link.removeprefix("hysteria2://")
-    main_nohash = main.split("#", 1)[0]
+    """解析 hysteria2:// 链接，返回去重指纹，异常返回空"""
     try:
-        authpart, qs_raw = main_nohash.split("?", 1)
-    except ValueError:
-        authpart = main_nohash
-        qs_raw = ""
-    auth, serverport = authpart.split("@", 1)
-    server, port = serverport.split(":", 1)
-    qs = urllib.parse.parse_qs(qs_raw)
-    get = lambda k: qs.get(k, [""])[0]
-    fp = f"hysteria2|{server}|{port}|{auth}|{get('alpn')}|{get('up')}|{get('down')}"
-    return fp, {}
+        main = link.removeprefix("hysteria2://")
+        main_nohash = main.split("#", 1)[0]
+        try:
+            authpart, qs_raw = main_nohash.split("?", 1)
+        except ValueError:
+            authpart = main_nohash
+            qs_raw = ""
+        auth, serverport = authpart.split("@", 1)
+        server, port = serverport.split(":", 1)
+        qs = urllib.parse.parse_qs(qs_raw)
+        get = lambda k: qs.get(k, [""])[0]
+        fp = f"hysteria2|{server}|{port}|{auth}|{get('alpn')}|{get('up')}|{get('down')}"
+        return fp, {}
+    except Exception:
+        return "", {}
 
 
 def parse_hysteria(link: str) -> Tuple[str, Dict]:
-    """解析 hysteria:// 链接，返回去重指纹"""
-    main = link.removeprefix("hysteria://")
-    main_nohash = main.split("#", 1)[0]
+    """解析 hysteria:// 链接，返回去重指纹，异常返回空"""
     try:
-        serverport, qs_raw = main_nohash.split("?", 1)
-    except ValueError:
-        serverport = main_nohash
-        qs_raw = ""
-    server, port = serverport.split(":", 1)
-    qs = urllib.parse.parse_qs(qs_raw)
-    get = lambda k: qs.get(k, [""])[0]
-    fp = f"hysteria|{server}|{port}|{get('auth')}|{get('alpn')}|{get('up')}|{get('down')}"
-    return fp, {}
+        main = link.removeprefix("hysteria://")
+        main_nohash = main.split("#", 1)[0]
+        try:
+            serverport, qs_raw = main_nohash.split("?", 1)
+        except ValueError:
+            serverport = main_nohash
+            qs_raw = ""
+        server, port = serverport.split(":", 1)
+        qs = urllib.parse.parse_qs(qs_raw)
+        get = lambda k: qs.get(k, [""])[0]
+        fp = f"hysteria|{server}|{port}|{get('auth')}|{get('alpn')}|{get('up')}|{get('down')}"
+        return fp, {}
+    except Exception:
+        return "", {}
 
 
 def parse_tuic(link: str) -> Tuple[str, Dict]:
-    """解析 tuic:// 链接，返回去重指纹"""
-    main = link.removeprefix("tuic://")
-    main_nohash = main.split("#", 1)[0]
+    """解析 tuic:// 链接，返回去重指纹，异常返回空"""
     try:
-        authpart, qs_raw = main_nohash.split("?", 1)
-    except ValueError:
-        authpart = main_nohash
-        qs_raw = ""
-    auth, serverport = authpart.split("@", 1)
-    uuid, password = auth.split(":", 1)
-    server, port = serverport.split(":", 1)
-    qs = urllib.parse.parse_qs(qs_raw)
-    get = lambda k: qs.get(k, [""])[0]
-    fp = f"tuic|{server}|{port}|{uuid}|{password}|{get('alpn')}"
-    return fp, {}
+        main = link.removeprefix("tuic://")
+        main_nohash = main.split("#", 1)[0]
+        try:
+            authpart, qs_raw = main_nohash.split("?", 1)
+        except ValueError:
+            authpart = main_nohash
+            qs_raw = ""
+        auth, serverport = authpart.split("@", 1)
+        uuid, password = auth.split(":", 1)
+        server, port = serverport.split(":", 1)
+        qs = urllib.parse.parse_qs(qs_raw)
+        get = lambda k: qs.get(k, [""])[0]
+        fp = f"tuic|{server}|{port}|{uuid}|{password}|{get('alpn')}"
+        return fp, {}
+    except Exception:
+        return "", {}
 
 
 def get_fingerprint(link: str) -> str:
@@ -238,6 +260,7 @@ def update_readme_summary(summary_text: str):
 
 def main():
     fail_url_list = []
+    bad_link_count = 0
     # 读取源订阅列表
     with open(SOURCE_FILE, "r", encoding="utf-8") as f:
         lines = [l.strip() for l in f if l.strip()]
@@ -257,7 +280,6 @@ def main():
             sub_raw = r.text
             dec_text = safe_b64_decode(sub_raw)
             if not dec_text:
-                # 使用repr处理特殊字符url，防止ascii编码报错
                 print(f"[WARN] {repr(url)} base64解码失败，跳过")
                 fail_url_list.append(url)
                 continue
@@ -265,25 +287,26 @@ def main():
             all_links.extend(links)
             print(f"[OK] {repr(url)} 解析得到 {len(links)} 条节点")
         except Exception as e:
-            # 使用repr处理特殊字符url，防止ascii编码报错
             print(f"[ERR] 获取订阅 {repr(url)} 失败: {str(e)}")
             fail_url_list.append(url)
             continue
     print(f"[INFO] 原始汇总节点总数: {len(all_links)}")
 
-    # 指纹去重
+    # 指纹去重，畸形链接跳过解析但保留原链接
     seen_fp: Set[str] = set()
     unique_links: list[str] = []
     for lk in all_links:
         fp = get_fingerprint(lk)
         if not fp:
-            # 无法解析协议的链接原样保留，不丢弃
+            bad_link_count += 1
+            # 解析指纹失败（畸形链接）原样保留该节点，不丢弃
             unique_links.append(lk)
             continue
         if fp not in seen_fp:
             seen_fp.add(fp)
             unique_links.append(lk)
     print(f"[INFO] 去重后节点总数: {len(unique_links)}")
+    print(f"[WARN] 解析指纹失败的畸形节点数量: {bad_link_count}")
 
     # 输出V2Ray base64订阅
     final_text = "\n".join(unique_links)
@@ -299,7 +322,8 @@ def main():
         f"- 订阅源总数：{len(sub_urls)}",
         f"- 失败订阅源：{len(fail_url_list)}",
         f"- 原始汇总节点：{len(all_links)}",
-        f"- 去重后节点：{len(unique_links)}"
+        f"- 去重后节点：{len(unique_links)}",
+        f"- 畸形无法指纹解析节点：{bad_link_count}"
     ]
     if fail_url_list:
         summary_lines.append("- 失效源列表：")
