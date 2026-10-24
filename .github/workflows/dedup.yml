@@ -1,0 +1,59 @@
+name: Sub Dedup Auto Run
+
+# 触发规则
+# cron: UTC时区，每小时38分执行；GitHub cron尽力调度，不保证绝对准时
+# workflow_dispatch: 网页手动点击运行
+on:
+  schedule:
+    - cron: '38 * * * *'
+  workflow_dispatch:
+
+jobs:
+  dedup-job:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      # 检出完整仓库代码
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # 配置Python3.11运行环境
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      # 安装Python依赖库
+      - name: Install python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests urllib3
+
+      # 执行核心脚本：拉取订阅、去重、更新README摘要
+      - name: Run dedup script (includes README update)
+        run: python3 dedup.py
+
+      # Git提交逻辑
+      # 1. result.txt、README.md发生变更 → 提交更新结果
+      # 2. 完全无变更 → 生成keepalive.txt制造提交，防止60天休眠定时任务
+      # run_summary.log仅本地调试，不加入版本控制
+      - name: Commit and push changes
+        run: |
+          git config --global user.name "Github Action Bot"
+          git config --global user.email "action@github.com"
+          git add result.txt README.md
+
+          if ! git diff --quiet --cached
+          then
+            git commit -m "chore: update sub & readme $(date -u +'%Y-%m-%d %H:%M UTC')"
+            git push
+          else
+            echo "keepalive timestamp: $(date -u)" > keepalive.txt
+            git add keepalive.txt
+            git commit -m "chore: keepalive cron alive $(date -u +'%Y-%m-%d %H:%M UTC')"
+            git push
+          fi
