@@ -6,10 +6,18 @@
 
 ## 运行状态摘要
 <!-- START SUMMARY -->
-- 最后更新时间：2026-10-24 03:09:22 UTC
-- 订阅源总数：20
-- 失败订阅源：0
-- 原始汇总节点：3330
-- 去重后节点：2113
-- 畸形无法指纹解析节点：409
+- 最后更新时间：2026-10-24 04:25:02 UTC
+- 订阅源总数：27
+- 失败订阅源：7
+- 原始汇总节点：20789
+- 去重后节点：19755
+- 畸形无法指纹解析节点：328
+- 失效源列表：
+  - https://node.freeclashnode.com/uploads/2026/10/0-20261024.txt
+  - https://raw.githubusercontent.com/Jsnzkpg/Jsnzkpg/Jsnzkpg/Jsnzkpg
+  - https://raw.githubusercontent.com/Misaka-blog/chromego_merge/refs/heads/main/sub/base64.txt
+  - https://raw.githubusercontent.com/aiboboxx/v2rayfree/main/v2
+  - https://raw.githubusercontent.com/anaer/Sub/main/proxies.yaml
+  - https://raw.githubusercontent.com/ermaozi/get_subscribe/refs/heads/main/subscribe/v2ray.txt
+  - https://raw.githubusercontent.com/mahdibland/V2RayAggregator/refs/heads/master/Eternity.txt
 <!-- END SUMMARY -->
